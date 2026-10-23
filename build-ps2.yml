@@ -1,0 +1,70 @@
+name: Build PS2 prototype
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Host gameplay tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Build and run gameplay tests
+        run: make host-test
+
+  build-elf:
+    name: Cross-compile PS2 ELF
+    runs-on: ubuntu-latest
+    container:
+      image: ps2dev/ps2dev:latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      # The PS2DEV container has the PS2 toolchain; install GNU Make from its
+      # minimal Alpine base image before invoking this project's Makefile.
+      - name: Install GNU Make and Git
+        run: apk add --no-cache make git
+
+      - name: Verify project layout
+        run: |
+          test -f Makefile
+          test -f src/game.c
+          test -f src/game.h
+          test -f src/ps2_main.c
+          test -f tests/game_tests.c
+
+      - name: Show PS2 toolchain environment
+        run: |
+          echo "PS2DEV=$PS2DEV"
+          echo "PS2SDK=$PS2SDK"
+          echo "GSKIT=$GSKIT"
+          ls "$GSKIT/lib" || true
+
+      - name: Build native PS2 executable
+        run: |
+          make clean
+          make
+          test -s diesel.elf
+          ls -l diesel.elf
+
+      - name: Stage ELF artifact
+        run: |
+          mkdir -p artifacts
+          cp diesel.elf artifacts/diesel.elf
+          sha256sum artifacts/diesel.elf > artifacts/diesel.elf.sha256
+
+      - name: Upload PS2 build
+        uses: actions/upload-artifact@v4
+        with:
+          name: diesel-death-ps2-elf
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
